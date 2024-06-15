@@ -41,13 +41,19 @@ class GlassdoorCrawler:
         self.driver.switch_to.window(self.driver.window_handles[-1])
     
     def search(self, company_name):
+        """
+        Search company name in Glassdoor.
+        """
         try:
+            # search by button with name "search-button"
+            # do not use full XPATH, because it may change in pages other than home page
             self.get_clickable(By.XPATH, '//button[@data-test="search-button"]').click()  # search_btn
             self.sleep(0.5)
         except:
             print("search button not found")
             pass
         input_btn = self.driver.find_element(By.XPATH, '//input[@data-test="keyword-search-input"]')
+        # clear before typing new company name
         input_btn.clear()
         input_btn.send_keys(company_name)
         self.sleep(0.5)
@@ -67,6 +73,8 @@ class GlassdoorCrawler:
     
     def go_to_benefit(self):
         try:
+            # search by button with name "Benefits"
+            # in glassdoor, this means data-test="ei-nav-benefits-link" by <a></a>
             self.get_clickable(By.XPATH, '//a[@data-test="ei-nav-benefits-link"]').click()
             self.sleep(6)
         except:
@@ -93,6 +101,12 @@ class GlassdoorCrawler:
         return overall_rating.text
 
     def get_categories(self):
+        """
+        Get all categories and rating score.
+        We do this because we need to know the category names in advance.
+        Then we would search clickable link by category name in `get_comments_under_category`.
+        This procedure would ensure we get all comments under each category.
+        """
         categories = self.driver.find_elements(By.XPATH, '//*[@id="Container"]/div/div/div[2]/main/div[2]/div[5]/div/div/div')
         company_info = {}
 
@@ -110,6 +124,14 @@ class GlassdoorCrawler:
         return company_info
     
     def get_comments_under_category(self, category_name):
+        """
+        Get all comments under a category.
+        Steps:
+        1. Click the category, find link by text
+        2. Get all comments
+        3. Click next page if `enabled`
+        4. Repeat until no more page [ or reach `max_page_search` (for DEBUG) ]
+        """
         self.driver.find_element(By.LINK_TEXT, category_name).click()
         time.sleep(2.5)
         self.driver.switch_to.window(self.driver.window_handles[-1])
@@ -158,12 +180,45 @@ class GlassdoorCrawler:
         self.driver.quit()
     
     def go_to_home(self):
+        """
+        Go to homepage by find the button on the top left corner.
+        """
         self.driver.find_element(By.XPATH, '//*[@id="globalNavContainer"]/div/div[1]/a').click()
         self.driver.switch_to.window(self.driver.window_handles[-1])
     
     def run(self, company_name):
+        """Grab full company info from Glassdoor.
+        1. search company name
+        2. go to benefit page
+        3. go to family tab
+        4. get overall rating
+        5. get categories
+        6. get comments under each category
+
+        NOTE: 
+            * must go to homepage to renew search, otherwise searching bar will be blocked
+            * if no family tab found, missing info, return empty.
+            * the searched company name may not be the same as the input company name, return the `searched name` instead.
+
+        Args:
+            company_name (_type_): company name in original Excel file
+
+        Returns:
+            dict: company info in dict format. Empty if no search result or no family tab found.
+                   full info includes:
+                     - searched_company_name: the company name found in Glassdoor
+                        - overall_rating: overall rating of the company
+                        - categories: dict of categories, each category includes:
+                            - comments: dict of comments, each comment includes:
+                                - date: date of the comment
+                                - score: score of the comment
+                                - position: position of the commenter
+                                - content: content of the comment
+        """
         match_name = self.search(company_name)
         if not match_name:
+            # no search result, return empty.
+            # must go homepage to renew search, otherwise searching bar will be blocked
             self.go_to_home()
             self.sleep(3.5)
             return {
@@ -173,6 +228,7 @@ class GlassdoorCrawler:
         self.go_to_benefit()
         family_btn = self.go_to_family_tab()
         if not family_btn:
+            # no family tab found, missing info, return empty.
             return {
                 "overall_rating": "N/A",
                 "categories": {}
@@ -186,7 +242,7 @@ class GlassdoorCrawler:
             }
             company_info[category_name].update(category_info)
             self.go_to_benefit()
-            self.go_to_family_tab()
+            self.go_to_family_tab()  # go back to family tab to renew
         return {
             "searched_company_name": match_name,
             "overall_rating": overall_rating,
@@ -211,8 +267,10 @@ if __name__ == "__main__":
     df = pd.read_excel(company_excel)
     # first column is the company name
     company_names = df.iloc[:, 0].tolist()
+    
     crawler = GlassdoorCrawler(user_email, user_password, max_page_search=999)
     crawler.login()
+
     for company_name in company_names:
         company_name_without_space = company_name.replace(" ", "_")
         if os.path.exists(result_dir/f"{company_name_without_space}.json"):
