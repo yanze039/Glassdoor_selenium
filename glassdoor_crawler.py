@@ -29,15 +29,21 @@ class GlassdoorCrawler:
         time.sleep(seconds)
 
     def login(self):
+        """
+        Log in to your Glassdoor account.
+        """
+        # use login email and password
         self.driver.get(self.login_url)
         self.sleep(3.5)
         login_email = self.driver.find_element(By.XPATH, '//*[@id="inlineUserEmail"]')
         login_email.send_keys(self.user_email)
+        self.sleep(1.2)
         self.get_clickable(By.XPATH, '//*[@id="InlineLoginModule"]/div/div[1]/div/div/div/div/form/div[2]/button').click()
         self.sleep(2.5)
         self.driver.find_element(By.XPATH, '//*[@id="inlineUserPassword"]').send_keys(self.user_password)
+        # //*[@id="InlineLoginModule"]/div/div[1]/div/div/div/div/form/div[4]/button
         self.get_clickable(By.XPATH, '//*[@id="InlineLoginModule"]/div/div[1]/div/div/div/div/form/div[2]/button').click()
-        self.sleep(3.5)
+        self.sleep(300.5)
         self.driver.switch_to.window(self.driver.window_handles[-1])
     
     def search(self, company_name):
@@ -61,6 +67,7 @@ class GlassdoorCrawler:
         self.sleep(3.5)
         self.driver.switch_to.window(self.driver.window_handles[-1])
         try:
+            # first search result
             first_search = self.driver.find_element(By.XPATH, '//*[@id="Discover"]/div/div/div[1]/div[1]/div[1]/a[1]')
             match_name = first_search.find_element(By.XPATH, "./div[2]/h3").text
         except:
@@ -72,6 +79,9 @@ class GlassdoorCrawler:
         return match_name
     
     def go_to_benefit(self):
+        """
+        Click the Benefits button.
+        """
         try:
             # search by button with name "Benefits"
             # in glassdoor, this means data-test="ei-nav-benefits-link" by <a></a>
@@ -85,18 +95,24 @@ class GlassdoorCrawler:
         self.driver.switch_to.window(self.driver.window_handles[-1])
     
     def go_to_family_tab(self):
-        # family_btn = self.driver.find_element(By.XPATH, '//*[@id="3"]')
+        """
+        Find the Family and Parenting Button and click it, otherwise report.
+        """
         try:
             family_btn = self.driver.find_element(By.XPATH, '//span[@data-test="tabName-Family & Parenting"]')
             family_btn.click()
             self.sleep(1.5)
         except:
+            # the company may not have family&parenting button under Benefits
             print("Family tab not found")
             return False
         self.driver.switch_to.window(self.driver.window_handles[-1])
         return True
     
     def get_overall_rating(self):
+        """
+        Get overall rating of Benefits.
+        """
         overall_rating = self.driver.find_element(By.XPATH, '//*[@id="Container"]/div/div/div[2]/main/div[1]/div/div[2]/div/div[1]/strong')
         return overall_rating.text
 
@@ -109,7 +125,6 @@ class GlassdoorCrawler:
         """
         categories = self.driver.find_elements(By.XPATH, '//*[@id="Container"]/div/div/div[2]/main/div[2]/div[5]/div/div/div')
         company_info = {}
-
         for category_box in categories:
             try:
                 rating_score = category_box.find_element(By.XPATH, "./div[2]/span[1]/span[1]").text
@@ -123,7 +138,31 @@ class GlassdoorCrawler:
                 continue
         return company_info
     
-    def get_comments_under_category(self, category_name):
+    def get_employ_info(self):
+        employ_info = {}
+        
+        try:
+            employee_reporting_number = self.driver.find_element(By.XPATH, '//*[@id="Container"]/div/div/div[2]/main/div[1]/div[1]/div/p/span').text
+        except:
+            employee_reporting_number = "N/A"
+        try:
+            employer_verified = self.driver.find_element(By.XPATH, '//*[@id="Container"]/div/div/div[2]/main/div[1]/div[3]/div/p/span').text
+        except:
+            employer_verified = "N/A"
+            
+        employ_info = {
+            "employee_reporting": employee_reporting_number,
+            "employer_verified": employer_verified
+        }
+    
+        return employ_info
+    
+    def go_to_category(self, category_name):
+        self.driver.find_element(By.LINK_TEXT, category_name).click()
+        time.sleep(2.5)
+        self.driver.switch_to.window(self.driver.window_handles[-1])
+    
+    def get_comments_under_category(self):
         """
         Get all comments under a category.
         Steps:
@@ -132,9 +171,6 @@ class GlassdoorCrawler:
         3. Click next page if `enabled`
         4. Repeat until no more page [ or reach `max_page_search` (for DEBUG) ]
         """
-        self.driver.find_element(By.LINK_TEXT, category_name).click()
-        time.sleep(2.5)
-        self.driver.switch_to.window(self.driver.window_handles[-1])
         end_page=False
         all_comments = {}
         page_idx = 1
@@ -228,19 +264,24 @@ class GlassdoorCrawler:
         self.go_to_benefit()
         family_btn = self.go_to_family_tab()
         if not family_btn:
-            # no family tab found, missing info, return empty.
             return {
                 "overall_rating": "N/A",
                 "categories": {}
             }
         overall_rating = self.get_overall_rating()
         company_info = self.get_categories()
+        
         for category_name in company_info.keys():
-            comments = self.get_comments_under_category(category_name)
+            # if category_name not in ["Work From Home"]:
+            #     continue
+            self.go_to_category(category_name)
+            employ_info = self.get_employ_info()
+            comments = self.get_comments_under_category()
             category_info = {
-                "comments": comments
+                "comments": comments,
             }
             company_info[category_name].update(category_info)
+            company_info[category_name].update(employ_info)
             self.go_to_benefit()
             self.go_to_family_tab()  # go back to family tab to renew
         return {
@@ -256,30 +297,30 @@ class GlassdoorCrawler:
        
 
 if __name__ == "__main__":
-    # user_email = "xxxx"
-    # user_password = "xxxx"
-    user_email = input("Please input your email: ")
-    user_password = input("Please input your password: ")
+
+    # user_email = input("Please input your email: ")
+    # user_password = input("Please input your password: ")
     result_dir = Path("company_info")
     result_dir.mkdir(exist_ok=True)
     
-    company_excel = "random50_nolink.xlsx"
+    company_excel = "compustat_full_sample.xlsx"
     df = pd.read_excel(company_excel)
     # first column is the company name
-    company_names = df.iloc[:, 0].tolist()
+    company_names = df.iloc[:, 1].tolist()
     
-    crawler = GlassdoorCrawler(user_email, user_password, max_page_search=999)
+    crawler = GlassdoorCrawler(user_email, user_password, login_url="https://www.glassdoor.com/Community/index.htm", max_page_search=999)
     crawler.login()
 
     for company_name in company_names:
         company_name_without_space = company_name.replace(" ", "_")
+        # ensure we can rerun from the last breakpoint when the code reports error
         if os.path.exists(result_dir/f"{company_name_without_space}.json"):
             print(f"Existed, Skip {company_name}")
             continue
         print(f"Start to crawl {company_name}")
         result = crawler.run(company_name)
         print(result)
-        
+        # save json file
         with open(result_dir/f"{company_name_without_space}.json", "w") as f:
             json.dump(result, f, indent=4)
         crawler.sleep(3.5)
