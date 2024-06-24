@@ -11,6 +11,7 @@ import pandas as pd
 import os
 import multiprocessing as mp
 from multiprocessing import Pool
+import undetected_chromedriver as uc
 
 
 class GlassdoorCrawler:
@@ -21,7 +22,7 @@ class GlassdoorCrawler:
             login_url = "https://www.glassdoor.com/profile/login_input.htm",
             max_page_search = 999,
         ):
-        self.driver = webdriver.Chrome()
+        self.driver = uc.Chrome()
         self.login_url = login_url
         self.user_email = user_email
         self.user_password = user_password
@@ -85,13 +86,16 @@ class GlassdoorCrawler:
         try:
             # search by button with name "Benefits"
             # in glassdoor, this means data-test="ei-nav-benefits-link" by <a></a>
-            self.get_clickable(By.XPATH, '//a[@data-test="ei-nav-benefits-link"]').click()
-            self.sleep(6)
+            self.get_clickable(By.XPATH, '//*[@data-test="ei-nav-benefits-link"]').click()
+            self.sleep(3)
         except:
             self.driver.refresh()
             self.sleep(3)
-            self.get_clickable(By.XPATH, '//a[@data-test="ei-nav-benefits-link"]').click()
-            self.sleep(6)
+            try:
+                self.get_clickable(By.XPATH, '//a[@data-test="ei-nav-benefits-link"]').click()
+            except:
+                self.get_clickable(By.XPATH, '//div[@data-test="ei-nav-benefits-link"]').click()
+            self.sleep(3)
         self.driver.switch_to.window(self.driver.window_handles[-1])
     
     def go_to_family_tab(self):
@@ -107,7 +111,8 @@ class GlassdoorCrawler:
             print("Family tab not found")
             return False
         self.driver.switch_to.window(self.driver.window_handles[-1])
-        return True
+        
+        return family_btn.get_attribute('id')
     
     def get_overall_rating(self):
         """
@@ -123,11 +128,19 @@ class GlassdoorCrawler:
         Then we would search clickable link by category name in `get_comments_under_category`.
         This procedure would ensure we get all comments under each category.
         """
-        categories = self.driver.find_elements(By.XPATH, '//*[@id="Container"]/div/div/div[2]/main/div[2]/div[5]/div/div/div')
         company_info = {}
+        h3_block = self.driver.find_element(By.XPATH, "//h3[text()='Family & Parenting']")
+        parent_grid = h3_block.find_element(By.XPATH, "./..")
+        
+        try:
+            # categories = self.driver.find_elements(By.XPATH, '//*[@id="Container"]/div/div/div[2]/main/div[2]/div[5]/div/div/div')
+            categories = parent_grid.find_elements(By.XPATH, ".//div[starts-with(@data-test, 'benefit-')]")
+        except:
+            print("No categories found")
+            categories = []
         for category_box in categories:
             try:
-                rating_score = category_box.find_element(By.XPATH, "./div[2]/span[1]/span[1]").text
+                rating_score = category_box.find_element(By.XPATH, './/span[@data-test="ratingValue"]').text
                 category_name = category_box.find_element(By.XPATH, "./div[1]/a").text
                 print(f"Item {category_name} are rated {rating_score}")
                 company_info[category_name] = {
@@ -256,24 +269,37 @@ class GlassdoorCrawler:
             # no search result, return empty.
             # must go homepage to renew search, otherwise searching bar will be blocked
             self.go_to_home()
-            self.sleep(3.5)
+            self.sleep(2.5)
             return {
                 "overall_rating": "N/A",
-                "categories": {}
+                "categories": {},
+                "error": "No search result found."
             }
         self.go_to_benefit()
         family_btn = self.go_to_family_tab()
         if not family_btn:
             return {
+                "searched_company_name": match_name,
                 "overall_rating": "N/A",
-                "categories": {}
+                "categories": {},
+                "error": "No Family tab found."
             }
-        overall_rating = self.get_overall_rating()
-        company_info = self.get_categories()
+        try:
+            overall_rating = self.get_overall_rating()
+        except:
+            overall_rating = "N/A"
+        try:
+            company_info = self.get_categories()
+        except:
+            company_info = {}
         
-        for category_name in company_info.keys():
+        print(company_info.keys())
+        for idx, category_name in enumerate(list(company_info.keys())):
             # if category_name not in ["Work From Home"]:
             #     continue
+            if idx > 0:
+                self.go_to_benefit()
+                self.go_to_family_tab()  # go back to family tab to renew
             self.go_to_category(category_name)
             employ_info = self.get_employ_info()
             comments = self.get_comments_under_category()
@@ -282,12 +308,12 @@ class GlassdoorCrawler:
             }
             company_info[category_name].update(category_info)
             company_info[category_name].update(employ_info)
-            self.go_to_benefit()
-            self.go_to_family_tab()  # go back to family tab to renew
+            
         return {
             "searched_company_name": match_name,
             "overall_rating": overall_rating,
-            "categories": company_info
+            "categories": company_info,
+            "error": "N/A"
         }
     
     def get_clickable(self, by, value, wait_time=10):
@@ -296,24 +322,38 @@ class GlassdoorCrawler:
         )
        
 
-def grab_company_info(company_name):
+def grab_company_info(company_names):
     result_dir = Path("company_info")
     user_email = "yanze039@mit.edu"
     user_password = "wazx31831110"
-    company_name_without_space = company_name.replace(" ", "_")
-    if os.path.exists(result_dir/f"{company_name_without_space}.json"):
-        print(f"Existed, Skip {company_name}")
-        return
     crawler = GlassdoorCrawler(user_email, user_password)
     crawler.login()
-    result = crawler.run(company_name)
-    crawler.close()
-    with open(result_dir/f"{company_name_without_space}.json", "w") as f:
-        json.dump(result, f, indent=4)
+    for company_name in company_names:
+        company_name_without_space = company_name.replace(" ", "_")
+        # ensure we can rerun from the last breakpoint when the code reports error
+        if os.path.exists(result_dir/f"{company_name_without_space}.json"):
+            print(f"Existed, Skip {company_name}")
+            continue
+        print(f"Start to crawl {company_name}")
+        result = crawler.run(company_name)
+        print(result)
+        # save json file
+        with open(result_dir/f"{company_name_without_space}.json", "w") as f:
+            json.dump(result, f, indent=4)
+        crawler.sleep(3.5)
+  
+
 
 if __name__ == "__main__":
-    user_email = "yanze039@mit.edu"
-    user_password = "wazx31831110"
+    import argparse
+    
+    parser = argparse.ArgumentParser()
+    parser.add_argument("start", type=int)
+    parser.add_argument("end", type=int)
+    args = parser.parse_args()
+    
+    user_email = "xxx"
+    user_password = "xxx"
     # user_email = input("Please input your email: ")
     # user_password = input("Please input your password: ")
     result_dir = Path("company_info")
@@ -322,30 +362,39 @@ if __name__ == "__main__":
     company_excel = "compustat_full_sample.xlsx"
     df = pd.read_excel(company_excel)
     # first column is the company name
-    company_names = df.iloc[:, 1].tolist()[:4]
+    all_company_names = df.iloc[:, 1].tolist()
     
     # ---- single process ----
-    # crawler = GlassdoorCrawler(user_email, user_password, max_page_search=999)
-    # crawler.login()
+    company_names = all_company_names[args.start:args.end]
+    crawler = GlassdoorCrawler(user_email, user_password, max_page_search=999)
+    crawler.login()
 
-    # for company_name in company_names:
-    #     company_name_without_space = company_name.replace(" ", "_")
-    #     # ensure we can rerun from the last breakpoint when the code reports error
-    #     if os.path.exists(result_dir/f"{company_name_without_space}.json"):
-    #         print(f"Existed, Skip {company_name}")
-    #         continue
-    #     print(f"Start to crawl {company_name}")
-    #     result = crawler.run(company_name)
-    #     print(result)
-    #     # save json file
-    #     with open(result_dir/f"{company_name_without_space}.json", "w") as f:
-    #         json.dump(result, f, indent=4)
-    #     crawler.sleep(3.5)
+    for company_name in company_names:
+        if "/" in company_name:
+            company_name = company_name.replace("/", " ")
+        company_name_without_space = company_name.replace(" ", "_")
+        # ensure we can rerun from the last breakpoint when the code reports error
+        if os.path.exists(result_dir/f"{company_name_without_space}.json"):
+            print(f"Existed, Skip {company_name}")
+            continue
+        print(f"Start to crawl {company_name}")
+        result = crawler.run(company_name)
+        print(result)
+        # save json file
+        with open(result_dir/f"{company_name_without_space}.json", "w") as f:
+            json.dump(result, f, indent=4)
+        crawler.sleep(2.5)
         
     # print("All done")
 
     # ---- multi-process ----
-    print("here")
-    print(company_names)
-    with Pool(2) as p:
-        p.map(grab_company_info, company_names)
+    
+    # print("here")
+    # print(all_company_names)
+    # max_workers = 4
+    # # divide company names into `max_workers` parts
+    # div_company_names = [all_company_names[i:i + len(all_company_names)//max_workers] for i in range(0, len(all_company_names), len(all_company_names)//max_workers)]
+    
+    # with Pool(max_workers) as p:
+    #     p.map(grab_company_info, div_company_names)
+        
