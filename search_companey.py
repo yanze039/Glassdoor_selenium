@@ -7,12 +7,14 @@ from selenium.webdriver.common.keys import Keys
 import time
 import json
 
+
 driver = webdriver.Chrome()
-# driver.get("https://www.glassdoor.com/Benefits/IBM-Benefits-E354.htm")
 driver.get("https://www.glassdoor.com/profile/login_input.htm")
 
-# 等待页面加载
+
+# login
 time.sleep(1.586967)
+
 login_email = driver.find_element(By.XPATH, '//*[@id="inlineUserEmail"]')
 login_email.send_keys("yanze039@mit.edu")
 time.sleep(1.245)
@@ -25,8 +27,6 @@ login_password = driver.find_element(By.XPATH, '//*[@id="inlineUserPassword"]')
 login_password.send_keys("xxxx")
 #### your password here
 
-
-
 time.sleep(2.245)
 login_button = driver.find_element(By.XPATH, '//*[@id="InlineLoginModule"]/div/div[1]/div/div/div/div/form/div[2]/button')
 login_button.click()
@@ -36,6 +36,12 @@ time.sleep(2.586967)
 
 # switch to new window
 driver.switch_to.window(driver.window_handles[-1])
+a_list = [1,2,3,4]
+x = a_list[-1]
+a_list.append(5)
+
+orginal_webpage = driver.window_handles[-1]
+
 try:
     search_btn = driver.find_element(By.XPATH, '//*[@id="UtilityNav"]/div[1]/button')
     search_btn.click()
@@ -79,6 +85,8 @@ driver.switch_to.window(driver.window_handles[-1])
 rating_categories = driver.find_elements(By.XPATH, '//*[@id="Container"]/div/div/div[2]/main/div[2]/div[5]/div/div/div')
 print("Rating Categories: ", len(rating_categories))
 
+family_window = driver.window_handles[-1]
+
 for category in rating_categories:
     try:
         rating_score = category.find_element(By.XPATH, "./div[2]/span[1]/span[1]")
@@ -92,8 +100,22 @@ for category in rating_categories:
         print(f"Item {category_name.text} are rated {rating_score.text}")
     except:
         continue
+    # go to subpage
+    driver.find_element(By.LinkText("Google")).Click()
+    driver.switch_to.window(driver.window_handles[-1])
+    
+
+# work from home
+# //*[@id="Container"]/div/div/div[2]/main/div[2]/div[5]/div/div/div[1]/div[1]/a
+# //*[@id="Container"]/div/div/div[2]/main/div[2]/div[5]/div/div/div[1]/div[2]/span[1]/span[1]
+# leave
+# //*[@id="Container"]/div/div/div[2]/main/div[2]/div[5]/div/div/div[2]/div[1]/a
+    
 # //*[@id="Container"]/div/div/div[2]/main/div[2]/div[5]/div/div/div[1]/div[1]/a
 # //*[@id="Container"]/div/div/div[2]/main/div[2]/div[5]/div/div/div[3]/div[2]/span/span[1]
 # //*[@id="Container"]/div/div/div[2]/main/div[2]/div[5]/div/div/div[6]/div[2]/span/span[1]
 # //*[@id="Container"]/div/div/div[2]/main/div[2]/div[5]/div/div/div[2]/div[2]/span[1]/span[1]
 time.sleep(113.586967)
+driver.switch_to.window(orginal_webpage)
+
+
